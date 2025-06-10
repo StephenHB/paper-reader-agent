@@ -1,0 +1,24 @@
+# Core Libraries
+langchain==0.2.1
+langchain-core==0.2.4
+langchain-community==0.2.4
+langchain-text-splitters==0.2.0
+
+# PDF Processing
+pypdf==4.2.0
+pdfminer.six==20240520
+unstructured==0.14.1
+
+# Embeddings & Vector Store
+sentence-transformers==3.0.0
+faiss-cpu==1.8.0
+
+# LLM Interface
+huggingface-hub==0.23.1
+transformers==4.41.2
+torch==2.3.0
+
+# Utilities
+python-dotenv==1.0.1
+tiktoken==0.7.0
+numpy==1.26.4
