@@ -128,13 +128,14 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+# Ignore common virtual environment folders
+**/venv/
+**/.venv/
+**/paper-reader/
+**/.env/
 .env
 .venv
-env/
-venv/
 ENV/
-env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject
