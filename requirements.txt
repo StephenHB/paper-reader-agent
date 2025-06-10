@@ -6,8 +6,8 @@ langchain-text-splitters==0.2.0
 
 # PDF Processing
 pypdf==4.2.0
-pdfminer.six==20240520
-unstructured==0.14.1
+pdfminer.six
+unstructured
 
 # Embeddings & Vector Store
 sentence-transformers==3.0.0
