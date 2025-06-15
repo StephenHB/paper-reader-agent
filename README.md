@@ -111,7 +111,7 @@ evaluation/
 ├── evaluator.py           # Evaluation orchestration
 └── test_data.test_data.json  # Sample test dataset
 ```
-![Evaluation System Diagram](docs/evaluation_diagram.png)
+
 ```mermaid
 graph TD
     A[Test Dataset] --> B[Model Evaluator]
