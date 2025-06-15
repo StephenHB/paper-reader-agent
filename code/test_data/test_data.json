@@ -1,0 +1,42 @@
+[
+  {
+    "id": "Q001",
+    "question": "What is the energy distance?",
+    "expected_answer": "The energy distance between the d-dimensional independent random variables X and Y is defined as the Euclidean distance between the empirical distributions of X and Y.",
+    "expected_sources": [
+      "Energy statistics- A class of statistics based on distances.pdf"
+    ],
+    "expected_pages": [
+      1251
+    ],
+    "difficulty": "medium",
+    "category": "Definition"
+  },
+  {
+    "id": "Q002",
+    "question": "How to calculate energy goodness-of-fit statistics?",
+    "expected_answer": "Two-parameter exponential distribution and Energy statistic for uniform distribution",
+    "expected_sources": [
+      "Energy statistics- A class of statistics based on distances.pdf"
+    ],
+    "expected_pages": [
+      1254,
+      1255
+    ],
+    "difficulty": "hard",
+    "category": "Solution"
+  },
+  {
+    "id": "Q003",
+    "question": "What are the applications of energy statistics?",
+    "expected_answer": "Energy statistics are used for testing normality, multivariate independence, and clustering analysis.",
+    "expected_sources": [
+      "Energy statistics- A class of statistics based on distances.pdf"
+    ],
+    "expected_pages": [
+      1257
+    ],
+    "difficulty": "medium",
+    "category": "Application"
+  }
+]
