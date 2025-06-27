@@ -1,6 +1,5 @@
-from agents.paper_agent import PaperAgent
 import argparse
-
+from agents.paper_agent import PaperAgent
 
 def main():
     parser = argparse.ArgumentParser(description="Build and run a paper reader agent")

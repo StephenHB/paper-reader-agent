@@ -28,3 +28,6 @@ numpy==1.26.4
 black
 nltk
 psutil
+
+# Streamlit
+streamlit
