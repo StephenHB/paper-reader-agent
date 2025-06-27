@@ -1,8 +1,8 @@
-from process_pdf import PDFProcessor
-from vector_store import VectorStoreBuilder
+import time
+from agents.process_pdf import PDFProcessor
+from agents.vector_store import VectorStoreBuilder
 import ollama
 import numpy as np
-import time
 
 
 class PaperAgent:
