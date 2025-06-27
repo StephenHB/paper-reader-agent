@@ -7,7 +7,9 @@ st.title("Paper Reader Agent")
 
 # Step 1: Upload PDFs
 st.header("Upload PDF files")
-uploaded_files = st.file_uploader("Choose PDF files", type="pdf", accept_multiple_files=True)
+uploaded_files = st.file_uploader(
+    "Choose PDF files", type="pdf", accept_multiple_files=True
+)
 pdf_dir = "./uploaded_pdfs"
 os.makedirs(pdf_dir, exist_ok=True)
 
@@ -35,7 +37,17 @@ if "agent" in st.session_state:
     st.header("Ask a question")
     question = st.text_input("Your question:")
     if st.button("Get Answer") and question:
-        answer = st.session_state["agent"].answer_query(question)
+        answer, sources = st.session_state["agent"].query(question)
         st.write(f"**Answer:** {answer}")
+        if sources:
+            st.markdown("**Sources:**")
+            for i, source in enumerate(sources):
+                st.write(f"{i+1}. {source['filename']} - Page {source['page']}")
 
-# Optional: Clean up uploaded files after session ends
+if st.button("Clean Up Uploaded PDFs"):
+    if os.path.exists(pdf_dir):
+        shutil.rmtree(pdf_dir)
+        os.makedirs(pdf_dir, exist_ok=True)
+        st.success("Uploaded PDF files have been cleaned up.")
+    else:
+        st.info("No uploaded files to clean up.")
