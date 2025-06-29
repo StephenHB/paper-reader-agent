@@ -64,7 +64,7 @@ else:
     selected_model = None
 
 # Step 3: Build Knowledge Base
-if st.button("Build Knowledge Base") and selected_model:
+if st.button("Build Knowledge Base", key="build_kb_btn") and selected_model:
     with st.spinner("Building knowledge base..."):
         agent = PaperAgent(
             embedding_model="nomic-embed-text",
@@ -83,7 +83,7 @@ elif st.button("Build Knowledge Base") and not selected_model:
 if "agent" in st.session_state:
     st.header("Ask a question")
     question = st.text_input("Your question:")
-    if st.button("Get Answer") and question:
+    if st.button("Get Answer", key="get_answer_btn") and question:
         with st.spinner("Generating answer..."):
             answer, sources = st.session_state["agent"].query(question)
             st.write(f"**Answer:** {answer}")
@@ -92,7 +92,7 @@ if "agent" in st.session_state:
                 for i, source in enumerate(sources):
                     st.write(f"{i+1}. {source['filename']} - Page {source['page']}")
 
-if st.button("Clean Up Uploaded PDFs"):
+if st.button("Clean Up Uploaded PDFs", key="cleanup_btn"):
     if os.path.exists(pdf_dir):
         shutil.rmtree(pdf_dir)
         os.makedirs(pdf_dir, exist_ok=True)
