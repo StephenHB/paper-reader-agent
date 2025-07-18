@@ -7,7 +7,8 @@ This file provides guidance to AI assistants such as Claude (claude.ai/code) whe
 This is a Retrieval-Augmented Generation (RAG) system for processing academic PDFs into a queryable knowledge base. The system includes:
 - PDF processing and vector storage
 - Local LLM integration via Ollama
-- Web interface using Streamlit
+- Modern web interface using FastAPI + React
+- Legacy Streamlit web interface
 - Comprehensive evaluation framework
 - Command-line tools for automation
 
@@ -46,6 +47,25 @@ which python  # Should show: /path/to/paper-reader/bin/python
 
 # Install dependencies if needed
 pip install -r requirements.txt
+```
+
+### Modern Web UI Development
+For the new FastAPI + React architecture:
+
+```bash
+# Backend development (FastAPI)
+cd web_UI
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# Frontend development (React)
+cd UI
+npm install
+npm run dev
+
+# The application will be available at:
+# Frontend: http://localhost:5173 (or next available port)
+# Backend API: http://localhost:8000
 ```
 
 ## Code Architecture Principles

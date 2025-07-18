@@ -1,0 +1,43 @@
+# FastAPI and web framework
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+
+# CORS is handled by FastAPI itself
+
+# File handling
+aiofiles==23.2.1
+
+# JSON handling
+pydantic==2.5.0
+
+# Logging and utilities
+python-dotenv==1.0.0
+
+# Reuse existing project dependencies
+# These will be available from the existing virtual environment
+# langchain==0.2.1
+# langchain-core==0.2.4
+# langchain-community==0.2.4
+# langchain-text-splitters==0.2.0
+# pypdf==4.2.0
+# pdfminer.six
+# unstructured
+# PyMuPDF==1.24.0
+# sentence-transformers==3.0.0
+# faiss-cpu==1.8.0
+# scikit-learn
+# huggingface-hub==0.23.1
+# transformers==4.41.2
+# torch==2.3.0
+# bitsandbytes
+# accelerate==0.30.1
+# python-dotenv==1.0.1
+# tiktoken==0.7.0
+# numpy==1.26.4
+# black
+# nltk
+# psutil
+# requests==2.31.0
+# beautifulsoup4==4.12.2
+# lxml==4.9.3 

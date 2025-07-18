@@ -7,6 +7,13 @@ This project provides a comprehensive system for processing academic PDFs into a
 1. **Paper Reader Agent**: Processes PDF documents into a vector database and provides an interface for querying the knowledge base
 2. **Reference Management System**: Automatically extracts references from PDFs and downloads related papers from online sources
 
+## Architecture
+
+The system uses a modern web architecture with:
+- **Backend**: FastAPI server providing RESTful APIs
+- **Frontend**: React application with Material-UI for a modern user interface
+- **AI Engine**: Local Ollama integration for embeddings and LLM processing
+
 ## Key Features
 
 - **PDF Processing**: Efficient text extraction and chunking from PDFs
@@ -17,7 +24,8 @@ This project provides a comprehensive system for processing academic PDFs into a
 - **Customized Reference Download**: Manual entry and download of specific papers
 - **Comprehensive Evaluation**: Metrics for retrieval, generation quality, and system performance
 - **Modular Design**: Reusable components with clear interfaces
-- **Streamlit Web Interface**: User-friendly web application for all operations
+- **Modern Web Interface**: React-based frontend with Material-UI design
+- **RESTful API**: FastAPI backend with comprehensive endpoints
 
 ## Installation
 
@@ -55,8 +63,25 @@ pip install -r requirements.txt
 ## Quick Start
 
 ### Running the Application
-After activating the virtual environment, you can run the Streamlit app:
+The system consists of a FastAPI backend and React frontend. You can run both components:
 
+#### Option 1: Modern Web UI (Recommended)
+```bash
+# Start the backend server
+cd web_UI
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# In a new terminal, start the frontend
+cd UI
+npm install
+npm run dev
+
+# The application will be available at:
+# Frontend: http://localhost:5173 (or next available port)
+# Backend API: http://localhost:8000
+```
+
+#### Option 2: Legacy Streamlit Interface
 ```bash
 # Navigate to the code directory
 cd code
@@ -128,15 +153,16 @@ The reference management system provides comprehensive reference handling:
 - **Batch Processing**: Handles multiple references efficiently
 - **Error Handling**: Graceful handling of download failures and unavailable papers
 
-### 3. Streamlit Web Interface
-The web interface provides a user-friendly way to interact with the system:
+### 3. Modern Web Interface
+The React-based web interface provides a modern, responsive way to interact with the system:
 
 - **PDF Upload**: Drag-and-drop interface for uploading papers
 - **Knowledge Base Building**: Automatic processing and vector store creation
-- **Query Interface**: Natural language question-answering
+- **Query Interface**: Natural language question-answering with real-time feedback
 - **Reference Management**: Visual interface for reference extraction and download
 - **Download Progress**: Real-time feedback on download operations
 - **Results Display**: Clear presentation of query results and download status
+- **Responsive Design**: Works seamlessly on desktop and mobile devices
 
 ## Usage Examples
 
@@ -207,15 +233,20 @@ python evaluate_model.py \
 
 ```text
 paper-reader-agent/
-├── code/
-│   ├── agents/                 # Core agent modules
-│   ├── evaluation/             # Evaluation system
-│   ├── notebooks/              # Jupyter notebooks
+├── web_UI/                     # FastAPI backend
+│   ├── main.py                 # Main FastAPI application
+│   ├── requirements.txt        # Backend dependencies
 │   ├── uploaded_pdfs/          # User uploaded PDFs
 │   ├── downloaded_references/  # Downloaded reference papers
-│   ├── vector_stores/          # FAISS vector stores
-│   ├── streamlit_app.py        # Main web application
-│   ├── build_agent.py          # Knowledge base builder
+│   └── vector_stores/          # FAISS vector stores
+├── UI/                         # React frontend
+│   ├── src/                    # React source code
+│   ├── package.json            # Frontend dependencies
+│   └── vite.config.ts          # Vite configuration
+├── code/                       # Legacy Streamlit interface
+│   ├── agents/                 # Core agent modules
+│   ├── evaluation/             # Evaluation system
+│   ├── streamlit_app.py        # Legacy web application
 │   └── evaluate_model.py       # Evaluation runner
 ├── docs/                       # Documentation
 ├── requirements.txt            # Python dependencies
