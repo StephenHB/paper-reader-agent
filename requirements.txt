@@ -8,6 +8,7 @@ langchain-text-splitters==0.2.0
 pypdf==4.2.0
 pdfminer.six
 unstructured
+PyMuPDF==1.24.0
 
 # Embeddings & Vector Store
 sentence-transformers==3.0.0
@@ -28,6 +29,9 @@ numpy==1.26.4
 black
 nltk
 psutil
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
 
 # Streamlit
 streamlit
