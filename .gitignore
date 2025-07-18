@@ -196,3 +196,30 @@ cython_debug/
 
 # Ignore vector store files
 code/notebooks/vector_stores/
+
+# Streamlit temporary files
+.streamlit/
+streamlit.log
+
+# Temporary files generated during testing
+*.tmp
+*.temp
+*~
+.#*
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary upload directories (created during Streamlit testing)
+code/uploaded_pdfs/*
+!code/uploaded_pdfs/.gitkeep
+
+# Temporary vector stores (created during testing)
+code/vector_stores/*
+!code/vector_stores/.gitkeep

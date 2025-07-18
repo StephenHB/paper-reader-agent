@@ -1,285 +1,536 @@
-# developer.md
+# Developer Guide - Paper Reader Agent
 
-This file provides guidance to AI such as Claude (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI assistants such as Claude (claude.ai/code) when working with code in this repository.
 
 ## Overview
 
-This is a flake-based Nix configuration managing multiple systems:
-- NixOS configurations for Linux headless servers (x86_64-linux)
-- nix-darwin configuration for macOS (aarch64-darwin)
-- Home Manager for user-level configurations
-- Custom packages and overlays
+This is a Retrieval-Augmented Generation (RAG) system for processing academic PDFs into a queryable knowledge base. The system includes:
+- PDF processing and vector storage
+- Local LLM integration via Ollama
+- Web interface using Streamlit
+- Comprehensive evaluation framework
+- Command-line tools for automation
 
-## Common Commands
+## Development Environment
 
-### System Rebuild Commands
-- **Linux (NixOS)**: `sudo nixos-rebuild switch --flake ".#$(hostname)"`
-- **macOS (darwin)**: `darwin-rebuild switch --flake ".#$(hostname -s)"`
-- **Shell alias**: `update` (configured in home-manager)
-
-**IMPORTANT**: After making changes to any Nix configuration files (including hooks), you MUST run `update` to apply the changes to the current system. Changes won't take effect until the system is rebuilt!
-
-### Hook Development Workflow
-When working on Claude Code hooks (`home-manager/claude-code/hooks/`):
-
-1. **Test Locally** (no rebuild needed):
-   ```bash
-   cd home-manager/claude-code/hooks
-   make lint    # Run shellcheck on all scripts
-   make test    # Run test suites
-   make check   # Run both lint and test
-   ```
-
-2. **Deploy Changes** (after testing):
-   ```bash
-   update       # Rebuild system to activate hook changes
-   ```
-
-This separation allows rapid development and testing without constant system rebuilds.
-
-## Claude Code Hook Development Guidelines
-
-### Exit Code Behavior
-
-Claude Code hooks use specific exit codes:
-
-- **Exit 0**: Continue operation silently (no user feedback)
-- **Exit 1**: General error (missing dependencies, configuration issues)
-- **Exit 2**: Display message to user (for BOTH errors AND success!)
-
-**IMPORTANT**: Exit code 2 is used for ANY message that should be shown to the user:
-- Error messages: `exit 2` with red error text
-- Success messages: `exit 2` with green success text (e.g., "✅ All style checks passed")
-- This allows hooks to provide positive feedback, not just error reporting
-
-#### Example Patterns
+### macOS Setup
+This project is optimized for macOS development. Ensure you have:
 
 ```bash
-# Success with feedback (common pattern)
-echo -e "${GREEN}✅ All tests passed${NC}" >&2
-exit 2  # Show success message to user
+# Check macOS version
+sw_vers
 
-# Error with feedback
-echo -e "${RED}❌ Linting failed${NC}" >&2
-exit 2  # Block operation and show error
+# Install Homebrew if not present
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Silent success (less common)
-exit 0  # Continue without feedback
+# Install Python 3.9+ via Homebrew
+brew install python@3.11
+
+# Install Ollama
+brew install ollama
+
+# Install required models
+ollama pull nomic-embed-text
+ollama pull llama3.2:latest
 ```
 
-When writing tests, remember:
-- `The status should equal 2` for BOTH success and error cases that show messages
-- Check stderr content to verify success vs error
-- `The status should equal 0` only for truly silent operations
-
-### ShellSpec Test Syntax
-
-#### ⚠️ NEVER USE INLINE BEFOREEACH/AFTEREACH BLOCKS ⚠️
-
-ShellSpec does **NOT** support inline code blocks for `BeforeEach`/`AfterEach`. This invalid syntax will cause "Unexpected 'End'" errors:
+### Virtual Environment Management
+Always use the existing virtual environment:
 
 ```bash
-# ❌ INVALID - THIS DOES NOT WORK
-BeforeEach
-    TEMP_DIR=$(create_test_dir)
-    cd "$TEMP_DIR" || return
-End
+# Activate the existing environment
+source paper-reader/bin/activate
 
-# ❌ ALSO INVALID - MIXING FUNCTION NAME WITH INLINE CODE
-BeforeEach 'setup_test'
-    TEMP_DIR=$(create_test_dir)
-    cd "$TEMP_DIR" || return
-End
+# Verify activation
+which python  # Should show: /path/to/paper-reader/bin/python
+
+# Install dependencies if needed
+pip install -r requirements.txt
 ```
 
-#### ✅ CORRECT: Use Function Definitions
+## Code Architecture Principles
 
-ShellSpec **ONLY** supports function references for hooks:
+### 1. Modular Design
+**CRITICAL**: Maintain strict modularity. Each component should have a single responsibility:
 
+```
+code/
+├── agents/                 # Core RAG components
+│   ├── paper_agent.py     # Main orchestrator
+│   ├── process_pdf.py     # PDF processing only
+│   └── vector_store.py    # Vector storage only
+├── evaluation/            # Evaluation framework
+│   ├── evaluator.py       # Evaluation orchestration
+│   └── evaluation_metrics.py  # Metrics calculation
+├── test_data/            # Test datasets
+└── streamlit_app.py      # Web interface
+```
+
+### 2. Interface Contracts
+Each module must have clear interfaces:
+
+```python
+# Example: PDFProcessor interface
+class PDFProcessor:
+    def load_pdfs_from_directory(self, directory_path) -> Tuple[List[str], List[dict]]:
+        """Load and process PDFs from directory.
+        
+        Returns:
+            Tuple of (text_chunks, metadata_list)
+        """
+        pass
+    
+    def split_text(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> List[str]:
+        """Split text into overlapping chunks."""
+        pass
+```
+
+### 3. Error Handling
+Implement comprehensive error handling:
+
+```python
+# Example: Graceful error handling
+try:
+    response = ollama.embeddings(model=self.embedding_model, prompt=text_chunk)
+    if "embedding" not in response:
+        raise ValueError("Missing 'embedding' in response")
+except Exception as e:
+    logger.error(f"Embedding generation failed: {str(e)}")
+    return None
+```
+
+## Enhancement Guidelines
+
+### Rule 1: Avoid New Functions/Modules
+**PRIORITY**: When enhancing existing code, modify existing functions rather than adding new ones.
+
+```python
+# ❌ DON'T: Add new function
+def process_pdf_advanced(self, file_path):
+    # New function
+    pass
+
+# ✅ DO: Enhance existing function
+def load_pdfs_from_directory(self, directory_path, advanced_processing=False):
+    # Enhanced existing function
+    if advanced_processing:
+        # New functionality
+        pass
+    # Existing functionality
+```
+
+### Rule 2: Successful Enhancement Cleanup
+After successful enhancement, **ALWAYS** perform cleanup:
+
+#### 3.1 Remove Unused Code
 ```bash
-# ✅ CORRECT - Define function first, then reference it
-setup_test() {
-    TEMP_DIR=$(create_test_dir)
-    cd "$TEMP_DIR" || return
-    export CLAUDE_HOOKS_DEBUG=0
-}
+# Find unused imports
+python -m flake8 --select=F401 code/
 
-cleanup_test() {
-    cd "$SPEC_DIR" || return
-    rm -rf "$TEMP_DIR"
-}
+# Find unused functions
+python -m vulture code/
 
-BeforeEach 'setup_test'
-AfterEach 'cleanup_test'
+# Remove dead code
+git add -u
+git commit -m "Remove unused code after enhancement"
 ```
 
-#### Other Critical ShellSpec Rules
+#### 3.2 Update Documentation
+```python
+# Update docstrings
+def enhanced_function(self, param1, param2, new_param=None):
+    """Enhanced function with new capabilities.
+    
+    Args:
+        param1: Original parameter
+        param2: Original parameter  
+        new_param: New parameter for enhanced functionality
+        
+    Returns:
+        Enhanced result with additional features
+    """
+    pass
 
-1. **No `Include spec_helper`** - ShellSpec automatically loads spec_helper.sh via `--require spec_helper` in .shellspec
-2. **One evaluation per test** - Only one `When call` statement allowed per `It` block
-3. **Array testing** - Cannot use `The length of ARRAY_NAME`. Test array elements individually.
-4. **Pattern matching** - Use `[[]` to match literal `[` in patterns
-
-#### Common Pitfalls to Avoid
-
-- **DO NOT** try to create inline BeforeEach/AfterEach blocks - they are not supported
-- **DO NOT** put `Include spec_helper` inside Describe blocks
-- **DO NOT** use multiple `When call` statements in a single test
-- **DO NOT** ignore the `--fail-fast` issue - it can mask real test failures with cryptic errors
-
-#### Debugging Test Failures
-
-When tests fail unexpectedly:
-
-1. **Use ShellSpec's `Dump` helper** to see actual output:
-   ```bash
-   When run some_command
-   Dump  # Shows stdout, stderr, and status
-   The status should equal 0
-   ```
-
-2. **Use the debug formatter** for detailed output:
-   ```bash
-   shellspec spec/test_spec.sh -f debug
-   ```
-
-3. **Add debug logging to hooks**:
-   ```bash
-   log_debug "Current state: $VAR"
-   ```
-   Then use the `run_hook_with_json_debug` helper in tests.
-
-**Note**: If a test suddenly passes after adding `Dump`, this may indicate timing issues or ShellSpec state problems.
-
-### Hook Implementation Guidelines
-
-#### JSON Protocol
-
-All hooks must properly implement the Claude Code JSON protocol:
-
-1. Read JSON from stdin
-2. Parse event type, tool name, and parameters
-3. Process only PostToolUse events for relevant tools
-4. Use proper exit codes:
-   - 0: Continue operation
-   - 1: Error (missing dependencies, etc.)
-   - 2: Block operation (linting/test failures)
-
-#### Hook Directory Structure
-
-```
-home-manager/claude-code/hooks/
-├── common-helpers.sh      # Shared utilities
-├── smart-lint.sh         # Main linting orchestrator
-├── smart-test.sh         # Main testing orchestrator
-├── lint-*.sh            # Language-specific linters
-├── test-*.sh            # Language-specific test runners
-├── spec/                # ShellSpec tests
-│   ├── spec_helper.sh   # Test utilities (auto-loaded)
-│   └── *_spec.sh        # Test files
-└── README.md            # User documentation
+# Update README.md with new features
+# Update PRD.md if requirements changed
+# Update inline comments
 ```
 
-### Building Packages
-- **Build custom package**: `nix build .#<package>`
-  - Available packages: myCaddy
-- **Legacy build**: `nix-build -A <package>`
+### Rule 3: Backward Compatibility
+Maintain backward compatibility when possible:
 
-### Flake Commands
-- **Update flake inputs**: `nix flake update`
-- **Show flake outputs**: `nix flake show`
-- **Check flake**: `nix flake check`
+```python
+# Use default parameters for new features
+def query(self, question, k=5, include_metadata=True):
+    # New parameter with default value
+    pass
+```
 
-## Testing and Validation
+### Rule 4: PRD Updates for Completed Tasks
+**MANDATORY**: After completing any task or enhancement, update the PRD with a summary of what was accomplished.
 
-### Important: Git and Nix Flakes
-**CRITICAL**: Nix flakes only see files that are tracked by git. Before running `nix flake check` or any nix build commands, you MUST:
-1. Add all new files to git: `git add <files>`
-2. Stage any modifications: `git add -u`
-3. Only then run `nix flake check`
+#### 4.1 Update PRD.md with Task Completion
+```markdown
+## Implementation Status
 
-This is a common Nix gotcha - untracked files are invisible to flake evaluation!
+### Completed Features
+- [x] **PDF Processing Engine** (Completed: 7/18/2025)
+  - Text extraction from PDFs using PyMuPDF
+  - Intelligent chunking with configurable size and overlap
+  - Memory optimization with garbage collection
+  - Comprehensive metadata tracking
+  - Error handling for corrupted files
 
-### Safe Testing Methods
-1. **Validate flake structure** (non-destructive):
-   ```bash
-   nix flake check
-   nix flake show
-   ```
+- [x] **Vector Storage System** (Completed: 7/18/2025)
+  - FAISS-based vector storage with batch processing
+  - Retry mechanisms for embedding generation
+  - Error handling for failed embeddings
+  - Persistent storage of indices and metadata
 
-2. **Dry-run system changes** (preview without applying):
-   ```bash
-   # macOS
-   darwin-rebuild switch --flake ".#$(hostname -s)" --dry-run
-   
-   # Linux
-   sudo nixos-rebuild switch --flake ".#$(hostname)" --dry-run
-   ```
+- [x] **Local LLM Integration** (Completed: 7/18/2025)
+  - Ollama integration for embeddings and LLM
+  - Complete offline operation
+  - Context-aware responses with source attribution
 
-3. **Build packages individually** (isolated testing):
-   ```bash
-   nix build .#myCaddy
-   ```
+- [x] **Web Interface** (Completed: 7/18/2025)
+  - Streamlit-based application
+  - PDF upload with drag-and-drop
+  - Interactive querying interface
+  - Source attribution display
 
-4. **Evaluate configurations** (syntax checking):
-   ```bash
-   # Evaluate NixOS configurations
-   nix eval .#nixosConfigurations.ultraviolet.config.system.build.toplevel
-   nix eval .#nixosConfigurations.bluedesert.config.system.build.toplevel
-   nix eval .#nixosConfigurations.echelon.config.system.build.toplevel
-   
-   # Evaluate Darwin configuration
-   nix eval .#darwinConfigurations.cloudbank.config.system.build.toplevel
-   ```
+- [x] **Evaluation Framework** (Completed: 7/18/2025)
+  - Multi-dimensional performance assessment
+  - Retrieval, generation, and system metrics
+  - Detailed reporting and export capabilities
 
-5. **Test home-manager changes**:
-   ```bash
-   # Build home configuration without switching
-   nix build .#homeConfigurations."joshsymonds@$(hostname -s)".activationPackage
-   ```
+### Recent Enhancements
+- [x] **Virtual Environment Setup** (7/18/2025)
+  - Added comprehensive setup instructions for macOS
+  - Documented existing `paper-reader` virtual environment usage
+  - Added troubleshooting for environment issues
 
-### Testing Workflow
-1. Make configuration changes
-2. Run `nix flake check` to validate syntax
-3. Use dry-run to preview system changes
-4. Build affected packages to ensure they compile
-5. Apply changes with rebuild command when satisfied
+- [x] **Developer Documentation** (7/18/2025)
+  - Created comprehensive developer guide
+  - Added enhancement guidelines and cleanup procedures
+  - Established testing requirements and CI/CD structure
 
-## Architecture
+### In Progress
+- [ ] **Performance Optimization** (Planned)
+  - Memory usage optimization for large document collections
+  - Response time improvements for complex queries
+  - Batch processing enhancements
 
-### Directory Structure
-- `flake.nix` - Main entry point defining inputs and outputs
-- `hosts/` - System-level configurations
-  - Linux servers: ultraviolet, bluedesert, echelon
-  - macOS: cloudbank
-  - `common.nix` - Shared configuration for Linux servers (NFS mounts)
-- `home-manager/` - User configurations
-  - `common.nix` - Shared across all systems
-  - `aarch64-darwin.nix` - macOS-specific
-  - `headless-x86_64-linux.nix` - Linux server-specific
-  - Application modules (nvim/, zsh/, kitty/, claude-code/, etc.)
-- `pkgs/` - Custom package definitions
-- `overlays/` - Nixpkgs modifications
-  - Single default overlay combining all modifications
-  - Provides `pkgs.stable` for stable packages when needed
+### Planned Features
+- [ ] **Multi-language Support**
+- [ ] **Image and Table Extraction**
+- [ ] **Collaborative Features**
+- [ ] **Cloud Backup and Synchronization**
+```
 
-### Key Patterns
-1. **Modular Configuration**: Each application has its own module in home-manager/
-2. **Platform Separation**: Platform-specific settings in separate files
-3. **Simplified Overlay System**: Single default overlay for all modifications
-4. **Minimal Special Arguments**: Only pass necessary inputs and outputs
-5. **Theming**: Consistent Catppuccin Mocha theme across applications
+#### 4.2 Task Summary Template
+For each completed task, add a summary section:
 
-### System Details
-- **cloudbank** (macOS laptop): Primary development machine with Aerospace window manager
-- **ultraviolet, bluedesert, echelon** (Linux servers): Headless home servers with NFS mounts
+```markdown
+## Task Completion Summary
 
-### Adding New Systems
-1. Create host configuration in `hosts/<hostname>/default.nix`
-2. Add to `nixosConfigurations` or `darwinConfigurations` in flake.nix
-3. Add hostname to appropriate list in `homeConfigurations` section
+### Task: [Task Name]
+**Date Completed**: [YYYY-MM-DD]
+**Developer**: [Name/AI Assistant]
 
-### Custom Package Development
-1. Add package definition to `pkgs/<package>/default.nix`
-2. Include in `pkgs/default.nix`
-3. Add to overlay in `overlays/default.nix`
+#### What Was Accomplished
+- [Specific feature/functionality implemented]
+- [Technical details and implementation approach]
+- [Key decisions made during development]
+
+#### Files Modified
+- `path/to/file1.py` - [Brief description of changes]
+- `path/to/file2.py` - [Brief description of changes]
+- `README.md` - [Documentation updates]
+
+#### Testing Performed
+- [Unit tests added/modified]
+- [Integration tests performed]
+- [Manual testing scenarios]
+
+#### Performance Impact
+- [Any performance improvements or considerations]
+- [Memory usage changes]
+- [Response time improvements]
+
+#### Known Issues/Limitations
+- [Any remaining issues or limitations]
+- [Workarounds implemented]
+
+#### Next Steps
+- [What should be done next]
+- [Related tasks or improvements]
+```
+
+#### 4.3 Update Process
+```bash
+# After completing a task:
+# 1. Update PRD.md with completion status
+# 2. Add task summary section
+# 3. Update acceptance criteria if needed
+# 4. Commit changes with descriptive message
+
+git add PRD.md
+git commit -m "Update PRD: Complete [Task Name] - [Brief description]"
+```
+
+#### 4.4 PRD Maintenance Checklist
+- [ ] Update implementation status for completed features
+- [ ] Add task completion summary with technical details
+- [ ] Update acceptance criteria if requirements changed
+- [ ] Review and update constraints/limitations
+- [ ] Update timeline with actual completion dates
+- [ ] Ensure all file modifications are documented
+- [ ] Update success metrics if new benchmarks were achieved
+
+## Testing Requirements
+
+### 4. CI/CD Test Structure
+**MANDATORY**: Add tests under `test/` folder for all new functionality:
+
+```
+test/
+├── unit/                    # Unit tests
+│   ├── test_pdf_processor.py
+│   ├── test_vector_store.py
+│   └── test_paper_agent.py
+├── integration/             # Integration tests
+│   ├── test_end_to_end.py
+│   └── test_evaluation.py
+├── fixtures/               # Test data
+│   ├── sample_pdfs/
+│   └── test_datasets/
+└── conftest.py             # Pytest configuration
+```
+
+### Test Implementation Standards
+
+#### Unit Tests
+```python
+# test/test_pdf_processor.py
+import pytest
+from agents.process_pdf import PDFProcessor
+
+class TestPDFProcessor:
+    def setup_method(self):
+        self.processor = PDFProcessor()
+    
+    def test_split_text_basic(self):
+        text = "This is a test document with multiple sentences."
+        chunks = self.processor.split_text(text, chunk_size=10, overlap=2)
+        assert len(chunks) > 0
+        assert all(len(chunk) <= 10 for chunk in chunks)
+    
+    def test_split_text_empty(self):
+        chunks = self.processor.split_text("")
+        assert chunks == []
+```
+
+#### Integration Tests
+```python
+# test/test_end_to_end.py
+import pytest
+from agents.paper_agent import PaperAgent
+
+class TestEndToEnd:
+    def test_build_and_query_knowledge_base(self, tmp_path):
+        # Test complete workflow
+        agent = PaperAgent(vector_store_dir=str(tmp_path))
+        
+        # Build knowledge base
+        success = agent.build_knowledge_base("./test/fixtures/sample_pdfs")
+        assert success
+        
+        # Query knowledge base
+        answer, sources = agent.query("What is the main topic?")
+        assert answer is not None
+        assert sources is not None
+```
+
+### Test Execution
+```bash
+# Run all tests
+pytest test/
+
+# Run specific test file
+pytest test/unit/test_pdf_processor.py
+
+# Run with coverage
+pytest --cov=code test/
+
+# Run integration tests only
+pytest test/integration/
+```
+
+## Development Workflow
+
+### 1. Environment Setup
+```bash
+# Always start with activated environment
+source paper-reader/bin/activate
+cd code
+```
+
+### 2. Code Enhancement Process
+```bash
+# 1. Identify existing function to enhance
+# 2. Modify existing function (don't add new ones)
+# 3. Test enhancement
+python -c "from agents.paper_agent import PaperAgent; agent = PaperAgent(); print('Import successful')"
+
+# 4. Run existing tests
+pytest test/ -v
+
+# 5. Add new tests if needed
+# 6. Clean up unused code
+python -m flake8 --select=F401 code/
+
+# 7. Update documentation
+# 8. Commit changes
+git add -u
+git commit -m "Enhance existing_function with new_feature"
+```
+
+### 3. Quality Assurance
+```bash
+# Lint code
+python -m flake8 code/
+python -m black code/
+python -m isort code/
+
+# Type checking (if using type hints)
+python -m mypy code/
+
+# Security check
+python -m bandit code/
+```
+
+## Common Patterns
+
+### Error Handling Pattern
+```python
+def robust_function(self, input_data):
+    """Robust function with comprehensive error handling."""
+    try:
+        # Main logic
+        result = self._process_data(input_data)
+        return result
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return None
+    except ConnectionError as e:
+        logger.error(f"Connection failed: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise
+```
+
+### Configuration Pattern
+```python
+class ConfigurableComponent:
+    def __init__(self, config=None):
+        self.config = config or self._default_config()
+    
+    def _default_config(self):
+        return {
+            'chunk_size': 2000,
+            'overlap': 200,
+            'batch_size': 50
+        }
+```
+
+### Logging Pattern
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+def function_with_logging(self, param):
+    logger.info(f"Processing {param}")
+    try:
+        result = self._process(param)
+        logger.info(f"Successfully processed {param}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to process {param}: {e}")
+        raise
+```
+
+## Performance Considerations
+
+### Memory Management
+```python
+# Use generators for large datasets
+def process_large_pdfs(self, pdf_files):
+    for pdf_file in pdf_files:
+        yield self._process_single_pdf(pdf_file)
+
+# Clean up resources
+import gc
+gc.collect()
+```
+
+### Batch Processing
+```python
+# Process in batches to avoid memory issues
+def batch_process(self, items, batch_size=50):
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        yield self._process_batch(batch)
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Virtual Environment Issues
+```bash
+# If activation fails
+rm -rf paper-reader
+python -m venv paper-reader
+source paper-reader/bin/activate
+pip install -r requirements.txt
+```
+
+#### Ollama Connection Issues
+```bash
+# Check Ollama status
+ollama list
+
+# Restart Ollama
+brew services restart ollama
+
+# Test connection
+python -c "import ollama; print(ollama.embeddings(model='nomic-embed-text', prompt='test'))"
+```
+
+#### Import Errors
+```bash
+# Check Python path
+python -c "import sys; print(sys.path)"
+
+# Verify virtual environment
+which python
+pip list | grep -E "(fitz|ollama|streamlit)"
+```
+
+## Best Practices Summary
+
+1. **Always use existing virtual environment** (`paper-reader`)
+2. **Modify existing functions** instead of adding new ones
+3. **Clean up after successful enhancements** (remove unused code, update docs)
+4. **Add tests for all new functionality** under `test/` folder
+5. **Maintain backward compatibility** when possible
+6. **Use comprehensive error handling** and logging
+7. **Follow modular design principles** with clear interfaces
+8. **Test thoroughly** before committing changes
+
+---
+
+*Last updated: 7/18/2025*
+*Version: 1.0*

@@ -50,6 +50,53 @@ pip install -r requirements.txt
 
 ```
 
+## Virtual Environment Setup
+
+### Using Existing Virtual Environment
+If you already have a virtual environment set up in the `paper-reader` directory:
+
+```bash
+# Activate the existing virtual environment
+source paper-reader/bin/activate  # Linux/Mac
+# or
+paper-reader\Scripts\activate     # Windows
+
+# Verify activation
+which python  # Should show path to paper-reader/bin/python
+```
+
+### Creating a New Virtual Environment
+If you need to create a new virtual environment:
+
+```bash
+# Create virtual environment
+python -m venv paper-reader
+
+# Activate environment
+source paper-reader/bin/activate  # Linux/Mac
+paper-reader\Scripts\activate     # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Running the Application
+After activating the virtual environment, you can run the Streamlit app:
+
+```bash
+# Navigate to the code directory
+cd code
+
+# Run Streamlit app
+streamlit run streamlit_app.py
+
+# The app will be available at:
+# Local URL: http://localhost:8501
+# Network URL: http://your-ip:8501
+```
+
+```
+
 ## System Components
 ```text
 +----------------+       +----------------+       +----------------+
