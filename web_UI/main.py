@@ -28,16 +28,16 @@ async def lifespan(app: FastAPI):
     # Startup
     global paper_agent, reference_manager
     
-    # Initialize reference manager
-    config = DownloadConfig(download_path="./downloaded_references")
-    reference_manager = ReferenceManager(config)
-    
-    # Initialize paper agent
+    # Initialize paper agent first
     paper_agent = PaperAgent(
         embedding_model="nomic-embed-text",
         llm_model="llama3.2:latest",
         vector_store_dir="./vector_stores"
     )
+    
+    # Initialize reference manager with AI capabilities
+    config = DownloadConfig(download_path="./downloaded_references")
+    reference_manager = ReferenceManager(config, paper_agent=paper_agent)
     
     yield
     

@@ -1,5 +1,7 @@
 import re
 import fitz
+import json
+import time
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 import logging
@@ -7,6 +9,14 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import ollama at module level
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+    logger.warning("Ollama not available, AI extraction will be disabled")
 
 
 @dataclass
@@ -20,12 +30,34 @@ class Reference:
     url: Optional[str] = None
     raw_text: str = ""
     confidence: float = 0.0
+    extraction_method: str = "regex"  # "regex", "ai", or "hybrid"
+
+
+@dataclass
+class ExtractionConfig:
+    """Configuration for reference extraction"""
+    use_ai: bool = True
+    use_regex: bool = True
+    ai_confidence_threshold: float = 0.7
+    max_ai_retries: int = 3
+    ai_timeout: int = 30
+    hybrid_mode: bool = True  # Use both AI and regex, combine results
 
 
 class ReferenceExtractor:
-    """Extract reference citations from PDF documents"""
+    """Extract reference citations from PDF documents with AI and regex capabilities"""
     
-    def __init__(self):
+    def __init__(self, paper_agent=None, config: Optional[ExtractionConfig] = None):
+        """
+        Initialize reference extractor
+        
+        Args:
+            paper_agent: Optional PaperAgent instance for AI extraction
+            config: Extraction configuration
+        """
+        self.paper_agent = paper_agent
+        self.config = config if config is not None else ExtractionConfig()
+        
         # Common reference section headers
         self.reference_headers = [
             r'references?',
@@ -67,12 +99,13 @@ class ReferenceExtractor:
         # DOI pattern
         self.doi_pattern = r'https?://doi\.org/([^\s]+)'
         
-    def extract_references_from_pdf(self, pdf_path: str) -> List[Reference]:
+    def extract_references_from_pdf(self, pdf_path: str, progress_callback=None) -> List[Reference]:
         """
-        Extract references from a PDF file
+        Extract references from a PDF file using configured methods
         
         Args:
             pdf_path: Path to the PDF file
+            progress_callback: Optional callback for progress updates
             
         Returns:
             List of Reference objects
@@ -85,8 +118,14 @@ class ReferenceExtractor:
                     logger.warning(f"No reference section found in {pdf_path}")
                     return []
                 
-                # Extract references from the section
-                references = self._extract_references_from_text(reference_section)
+                # Extract references using configured methods
+                if self.config.hybrid_mode and self.config.use_ai and self.config.use_regex:
+                    references = self._extract_references_hybrid(reference_section, progress_callback)
+                elif self.config.use_ai and self.paper_agent:
+                    references = self._extract_references_ai(reference_section, progress_callback)
+                else:
+                    references = self._extract_references_from_text(reference_section)
+                
                 logger.info(f"Extracted {len(references)} references from {pdf_path}")
                 return references
                 
@@ -473,6 +512,242 @@ class ReferenceExtractor:
             )
         
         return None
+    
+    def _extract_references_ai(self, text: str, progress_callback=None) -> List[Reference]:
+        """
+        Extract references using AI agent
+        
+        Args:
+            text: Text containing references
+            progress_callback: Optional progress callback
+            
+        Returns:
+            List of Reference objects
+        """
+        if not self.paper_agent:
+            logger.warning("PaperAgent not available, falling back to regex extraction")
+            return self._extract_references_from_text(text)
+        
+        try:
+            # Split text into manageable chunks for AI processing
+            chunks = self._split_text_for_ai(text)
+            all_references = []
+            
+            for i, chunk in enumerate(chunks):
+                if progress_callback:
+                    progress_callback(i, len(chunks), f"AI processing chunk {i+1}/{len(chunks)}")
+                
+                try:
+                    chunk_references = self._process_chunk_with_ai(chunk)
+                    all_references.extend(chunk_references)
+                except Exception as e:
+                    logger.error(f"AI processing failed for chunk {i}: {str(e)}")
+                    # Fallback to regex for this chunk
+                    fallback_refs = self._extract_references_from_text(chunk)
+                    for ref in fallback_refs:
+                        ref.extraction_method = "regex_fallback"
+                    all_references.extend(fallback_refs)
+            
+            # Remove duplicates and merge similar references
+            unique_references = self._deduplicate_references(all_references)
+            
+            return unique_references
+            
+        except Exception as e:
+            logger.error(f"AI extraction failed: {str(e)}, falling back to regex")
+            return self._extract_references_from_text(text)
+    
+    def _extract_references_hybrid(self, text: str, progress_callback=None) -> List[Reference]:
+        """
+        Extract references using both AI and regex, then combine results
+        
+        Args:
+            text: Text containing references
+            progress_callback: Optional progress callback
+            
+        Returns:
+            List of Reference objects
+        """
+        ai_references = []
+        regex_references = []
+        
+        # Extract using both methods
+        if self.config.use_ai and self.paper_agent:
+            try:
+                ai_references = self._extract_references_ai(text, progress_callback)
+            except Exception as e:
+                logger.error(f"AI extraction failed in hybrid mode: {str(e)}")
+        
+        if self.config.use_regex:
+            regex_references = self._extract_references_from_text(text)
+        
+        # Combine and score references
+        combined_references = self._combine_extraction_results(ai_references, regex_references)
+        
+        return combined_references
+    
+    def _process_chunk_with_ai(self, chunk: str) -> List[Reference]:
+        """
+        Process a text chunk with AI to extract references
+        
+        Args:
+            chunk: Text chunk to process
+            
+        Returns:
+            List of Reference objects
+        """
+        # Create specialized prompt for reference extraction
+        prompt = f"""
+        You are an expert academic reference parser. Extract all bibliographic references from the following text.
+        
+        For each reference, provide the information in this exact JSON format:
+        {{
+            "authors": "Author names as they appear",
+            "title": "Paper title",
+            "journal": "Journal or conference name",
+            "year": "Publication year",
+            "doi": "DOI if available, otherwise null",
+            "confidence": "Your confidence score (0.0 to 1.0)"
+        }}
+        
+        Return only a valid JSON array of references. If no references are found, return an empty array [].
+        
+        Text to analyze:
+        {chunk}
+        """
+        
+        try:
+            # Use PaperAgent's LLM directly for reference extraction
+            if not OLLAMA_AVAILABLE:
+                logger.error("Ollama not available for AI extraction")
+                return []
+            
+            if not self.paper_agent or not hasattr(self.paper_agent, 'llm_model'):
+                logger.error("PaperAgent not properly configured for AI extraction")
+                return []
+            
+            response = ollama.chat(
+                model=self.paper_agent.llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"timeout": self.config.ai_timeout}
+            )
+            
+            content = response["message"]["content"]
+            
+            # Parse JSON response
+            try:
+                # Extract JSON from response (handle cases where LLM adds extra text)
+                json_start = content.find('[')
+                json_end = content.rfind(']') + 1
+                if json_start != -1 and json_end > json_start:
+                    json_str = content[json_start:json_end]
+                    references_data = json.loads(json_str)
+                else:
+                    logger.warning("No valid JSON array found in AI response")
+                    return []
+                
+                # Convert to Reference objects
+                references = []
+                for ref_data in references_data:
+                    if isinstance(ref_data, dict):
+                        reference = Reference(
+                            authors=ref_data.get('authors', ''),
+                            title=ref_data.get('title', ''),
+                            journal=ref_data.get('journal', ''),
+                            year=str(ref_data.get('year', '')),
+                            doi=ref_data.get('doi'),
+                            confidence=float(ref_data.get('confidence', 0.5)),
+                            raw_text=chunk,
+                            extraction_method="ai"
+                        )
+                        references.append(reference)
+                
+                return references
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse AI response as JSON: {str(e)}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"AI processing failed: {str(e)}")
+            return []
+    
+    def _split_text_for_ai(self, text: str, max_chunk_size: int = 2000) -> List[str]:
+        """
+        Split text into chunks suitable for AI processing
+        
+        Args:
+            text: Text to split
+            max_chunk_size: Maximum chunk size
+            
+        Returns:
+            List of text chunks
+        """
+        lines = text.split('\n')
+        chunks = []
+        current_chunk = ""
+        
+        for line in lines:
+            if len(current_chunk) + len(line) > max_chunk_size and current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = line
+            else:
+                current_chunk += line + "\n"
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    def _combine_extraction_results(self, ai_references: List[Reference], regex_references: List[Reference]) -> List[Reference]:
+        """
+        Combine AI and regex extraction results, removing duplicates
+        
+        Args:
+            ai_references: References extracted by AI
+            regex_references: References extracted by regex
+            
+        Returns:
+            Combined list of unique references
+        """
+        combined = []
+        seen_titles = set()
+        
+        # Add AI references first (higher priority)
+        for ref in ai_references:
+            if ref.title.lower() not in seen_titles:
+                combined.append(ref)
+                seen_titles.add(ref.title.lower())
+        
+        # Add regex references that weren't found by AI
+        for ref in regex_references:
+            if ref.title.lower() not in seen_titles:
+                ref.extraction_method = "regex"
+                combined.append(ref)
+                seen_titles.add(ref.title.lower())
+        
+        return combined
+    
+    def _deduplicate_references(self, references: List[Reference]) -> List[Reference]:
+        """
+        Remove duplicate references based on title similarity
+        
+        Args:
+            references: List of references to deduplicate
+            
+        Returns:
+            Deduplicated list of references
+        """
+        unique_refs = []
+        seen_titles = set()
+        
+        for ref in references:
+            title_lower = ref.title.lower()
+            if title_lower not in seen_titles:
+                unique_refs.append(ref)
+                seen_titles.add(title_lower)
+        
+        return unique_refs
     
     def get_extraction_stats(self, references: List[Reference]) -> Dict:
         """

@@ -44,16 +44,46 @@ class DownloadConfig:
 class ReferenceManager:
     """Manage reference extraction, user consent, and downloading"""
     
-    def __init__(self, config: Optional[DownloadConfig] = None):
+    def __init__(self, config: Optional[DownloadConfig] = None, paper_agent=None):
         """
         Initialize the reference manager
         
         Args:
             config: Download configuration
+            paper_agent: Optional PaperAgent for AI-powered extraction
         """
         self.config = config if config is not None else DownloadConfig(download_path="./downloaded_references")
-        self.extractor = ReferenceExtractor()
-        self.downloader = ReferenceDownloader(self.config.download_path)
+        self.paper_agent = paper_agent
+        
+        # Initialize extractor with AI capabilities if available
+        if paper_agent:
+            from .reference_extractor import ExtractionConfig
+            extraction_config = ExtractionConfig(
+                hybrid_mode=True,  # Use hybrid mode for best results
+                ai_timeout=30,
+                use_ai=True,
+                use_regex=True
+            )
+            self.extractor = ReferenceExtractor(paper_agent=paper_agent, config=extraction_config)
+        else:
+            self.extractor = ReferenceExtractor()
+        
+        # Initialize downloader with MCP capabilities if available
+        try:
+            from .mcp_fetch_client import MCPFetchConfig
+            mcp_config = MCPFetchConfig(
+                enabled=True,
+                timeout=30,
+                max_retries=3,
+                rate_limit_delay=0.5
+            )
+            self.downloader = ReferenceDownloader(
+                download_dir=self.config.download_path,
+                mcp_config=mcp_config
+            )
+        except ImportError:
+            # Fallback to basic downloader
+            self.downloader = ReferenceDownloader(self.config.download_path)
         
         # Create necessary directories
         os.makedirs(self.config.download_path, exist_ok=True)

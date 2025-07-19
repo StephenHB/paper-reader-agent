@@ -12,19 +12,40 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import MCP fetch client
+try:
+    from .mcp_fetch_client import MCPFetchClient, MCPFetchConfig
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    logger.warning("MCP fetch client not available, using fallback methods only")
+
 
 class ReferenceDownloader:
     """Download reference papers from academic databases"""
     
-    def __init__(self, download_dir: str = "./downloaded_references"):
+    def __init__(self, download_dir: str = "./downloaded_references", mcp_config: Optional[MCPFetchConfig] = None):
         """
         Initialize the reference downloader
         
         Args:
             download_dir: Directory to store downloaded papers
+            mcp_config: Optional MCP fetch configuration
         """
         self.download_dir = download_dir
         os.makedirs(download_dir, exist_ok=True)
+        
+        # Initialize MCP fetch client if available
+        self.mcp_client = None
+        if MCP_AVAILABLE and mcp_config:
+            self.mcp_client = MCPFetchClient(mcp_config)
+            logger.info("MCP fetch client initialized")
+        elif MCP_AVAILABLE:
+            # Use default MCP config
+            self.mcp_client = MCPFetchClient()
+            logger.info("MCP fetch client initialized with default config")
+        else:
+            logger.info("MCP fetch client not available, using traditional methods")
         
         # API endpoints and configurations
         self.arxiv_api_url = "http://export.arxiv.org/api/query"
@@ -90,7 +111,7 @@ class ReferenceDownloader:
     
     def download_single_reference(self, reference) -> Dict:
         """
-        Download a single reference paper
+        Download a single reference paper with MCP-enhanced methods
         
         Args:
             reference: Reference object
@@ -108,7 +129,17 @@ class ReferenceDownloader:
                 'file_path': existing_file
             }
         
-        # Try different search methods in order of preference
+        # Try MCP fetch first if available
+        if self.mcp_client:
+            try:
+                mcp_result = self._download_with_mcp(reference)
+                if mcp_result['status'] == 'success':
+                    return mcp_result
+                logger.debug(f"MCP download failed, trying fallback methods: {mcp_result.get('error', 'Unknown error')}")
+            except Exception as e:
+                logger.debug(f"MCP download failed with exception: {str(e)}")
+        
+        # Fallback to traditional methods
         search_methods = [
             self._search_arxiv,
             self._search_pubmed,
@@ -124,7 +155,7 @@ class ReferenceDownloader:
                         return {
                             'reference': reference,
                             'status': 'success',
-                            'message': f'Downloaded via {method.__name__}',
+                            'message': f'Downloaded via {method.__name__} (fallback)',
                             'file_path': file_path,
                             'source': method.__name__
                         }
@@ -138,6 +169,134 @@ class ReferenceDownloader:
             'message': 'No download source found',
             'file_path': None
         }
+    
+    def _download_with_mcp(self, reference) -> Dict:
+        """
+        Download reference using MCP fetch client
+        
+        Args:
+            reference: Reference object
+            
+        Returns:
+            Dictionary with download result
+        """
+        if not self.mcp_client:
+            return {
+                'reference': reference,
+                'status': 'failed',
+                'message': 'MCP client not available',
+                'file_path': None
+            }
+        
+        try:
+            # Build search query from reference
+            query_parts = []
+            if reference.title:
+                query_parts.append(reference.title)
+            if reference.authors:
+                # Add first author's last name
+                first_author = reference.authors.split(',')[0].strip()
+                if ' ' in first_author:
+                    last_name = first_author.split()[-1]
+                    query_parts.append(last_name)
+            
+            if not query_parts:
+                return {
+                    'reference': reference,
+                    'status': 'failed',
+                    'message': 'Insufficient reference information for search',
+                    'file_path': None
+                }
+            
+            search_query = ' '.join(query_parts)
+            
+            # Try different academic sources
+            sources = ['arxiv', 'pubmed', 'biorxiv', 'medrxiv']
+            
+            for source in sources:
+                try:
+                    # Search for papers
+                    papers = self.mcp_client.search_academic_papers(search_query, source, max_results=3)
+                    
+                    for paper in papers:
+                        # Check if this paper matches our reference
+                        if self._is_similar_paper_mcp(reference, paper):
+                            # Try to download the PDF
+                            file_path = self.mcp_client.download_paper_pdf(paper, self.download_dir)
+                            if file_path:
+                                return {
+                                    'reference': reference,
+                                    'status': 'success',
+                                    'message': f'Downloaded via MCP {source}',
+                                    'file_path': file_path,
+                                    'source': f'mcp_{source}'
+                                }
+                
+                except Exception as e:
+                    logger.debug(f"MCP search failed for {source}: {str(e)}")
+                    continue
+            
+            return {
+                'reference': reference,
+                'status': 'failed',
+                'message': 'MCP search found no matching papers',
+                'file_path': None
+            }
+            
+        except Exception as e:
+            logger.error(f"MCP download failed: {str(e)}")
+            return {
+                'reference': reference,
+                'status': 'failed',
+                'message': f'MCP download error: {str(e)}',
+                'file_path': None
+            }
+    
+    def _is_similar_paper_mcp(self, reference, paper_info: Dict) -> bool:
+        """
+        Check if MCP paper matches our reference
+        
+        Args:
+            reference: Reference object
+            paper_info: Paper information from MCP
+            
+        Returns:
+            True if papers are similar
+        """
+        try:
+            # Compare titles
+            if reference.title and paper_info.get('title'):
+                ref_title = reference.title.lower()
+                paper_title = paper_info['title'].lower()
+                
+                # Simple similarity check - could be enhanced with more sophisticated matching
+                if ref_title in paper_title or paper_title in ref_title:
+                    return True
+                
+                # Check for significant word overlap
+                ref_words = set(ref_title.split())
+                paper_words = set(paper_title.split())
+                common_words = ref_words.intersection(paper_words)
+                
+                if len(common_words) >= min(3, len(ref_words) // 2):
+                    return True
+            
+            # Compare authors
+            if reference.authors and paper_info.get('authors'):
+                ref_authors = [author.strip().lower() for author in reference.authors.split(',')]
+                paper_authors = [author.strip().lower() for author in paper_info['authors']]
+                
+                # Check for author overlap
+                for ref_author in ref_authors:
+                    for paper_author in paper_authors:
+                        if ref_author in paper_author or paper_author in ref_author:
+                            return True
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error comparing papers: {str(e)}")
+            return False
     
     def _search_arxiv(self, reference) -> Optional[str]:
         """
